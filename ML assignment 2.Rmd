@@ -1,0 +1,153 @@
+---
+title: "Assignment_2_ML1"
+author: "Obianuju Anumnu"
+date: "October 4, 2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+Bank <- read.csv("D:/Machine/Assignment2/UniversalBank.csv")
+
+head(Bank)
+summary(Bank)
+sapply(Bank, class)
+
+#Set Personal loan as factor
+Bank$Personal.Loan<-as.factor(Bank$Personal.Loan)
+
+library(dummies)
+dummy_model <- dummyVars(~Education,data=Bank)
+head(predict(dummy_model,Bank))
+Loan_Dummy<- dummy.data.frame(Bank, names = c("Education"), sep= ".")
+UB <- subset(Loan_Dummy, select = -c(1, 5))
+UB
+```
+
+```{r}
+# Partition data 
+library(caret)
+library(ISLR)
+set.seed(15)
+Index_Train<-createDataPartition(UB$Personal.Loan, p=0.6, list=FALSE) 
+
+# Use 60% of data for training and the rest for validation
+Train <-UB[Index_Train,]
+Valid <-UB[-Index_Train,]
+#summary(Train)
+#summary(Valid)
+train.norm.df <- Train
+valid.norm.df <- Valid
+
+L_Predictors<-UB[,-10]
+L_labels<-UB[,10]
+
+#normalize data
+norm_model<-preProcess(Train, method = c('range'))
+norm_valid<-preProcess(Valid, method = c('range')) 
+train.norm.df[, -10]<-predict(norm_model,Train[, -10]) 
+valid.norm.df[, -10] <- predict(norm_model, Valid[, -10])
+
+```
+
+
+```{r}
+library(FNN)
+#build the KNN model
+nn <- knn(train = train.norm.df[, -10], test = valid.norm.df[, -10], 
+          cl = train.norm.df[, 10], k = 1, prob=TRUE)
+
+#first 6 values of predicted class 
+head(nn)
+```
+
+
+```{r}
+customer<- data.frame(40, 10, 84, 2, 2, 0, 1, 0, 0, 0, 0, 1, 1)
+colnames(customer) <- colnames(L_Predictors)
+#cust_model<-preProcess(customer, method = c('range'))
+#No variation for for: Age, Experience, Income, Family, CCAvg, Education.1, Education.2, Education.3, Mortgage, Securities.Account, CD.Account, Online, CreditCardSTATS is longer than the extent of 'dim(x)[MARGIN]'
+
+# How would this customer be classified when using k=1
+knn.new <- knn(train.norm.df[, -10], customer, cl=train.norm.df[, 10], k=1, prob = 0.5)
+knn.new
+
+```
+
+```{r}
+#Choice of k that balances between overfitting and ignoring the predictor information?
+accuracy.df <- data.frame(k = seq(1, 14, 1), accuracy = rep(0, 14))
+
+for(i in 1:14) {
+                  knn <- knn(train.norm.df[, -10], valid.norm.df[, -10], cl = train.norm.df[, 10], k = i)
+                  accuracy.df[i, 2] <- confusionMatrix(knn, valid.norm.df[, 10])$overall[1] 
+                }
+accuracy.df
+
+which.max((accuracy.df$accuracy))
+
+```
+
+```{r}
+#Show the confusion matrix for the validation data that results from using the best k.
+knn.valid <- knn(train.norm.df[, -10],valid.norm.df[, -10],cl=train.norm.df[, 10],k=3,prob = 0.5)
+confusionMatrix(knn.valid, valid.norm.df[, 10]) 
+
+#4. Classify the customer using the best k
+knn.pred.new<- knn(train.norm.df[, -10],customer,cl=train.norm.df[, 10],k=3,prob = 0.5)
+knn.pred.new
+```
+
+```{r}
+# predicting customer using all data
+knn.pred4 <- knn(L_Predictors, customer, cl=L_labels, k=3, prob = TRUE)
+knn.pred4
+```
+
+
+```{r}
+set.seed(15)
+Index_Train_2<-createDataPartition(UB$Personal.Loan, p=0.5, list=FALSE)
+# Use 50% of data for training and the rest for validation and Test
+Train_2 <-UB[Index_Train_2,]
+Test_Valid_Data <-UB[-Index_Train_2,] 
+
+# Test and Validation
+Index_Test<-createDataPartition(Test_Valid_Data$Personal.Loan, p=0.4, list=FALSE)
+Test_2 <- Test_Valid_Data[Index_Test,]
+Valid_2 <-Test_Valid_Data[-Index_Test,]
+
+train.norm.df_2 <- Train_2
+valid.norm.df_2 <- Valid_2
+
+norm.values_2 <- preProcess(Train_2[, -10], method=c("center", "scale"))
+norm.values_2 <- preProcess(Valid_2[, -10], method=c("center", "scale"))
+
+train.norm.df_2[, -10] <- predict(norm.values_2, Train_2[, -10])
+valid.norm.df_2[, -10] <- predict(norm.values_2, Valid_2[, -10])
+test.norm.df_2 <- predict(norm.values_2, Test_2[, -10])
+ 
+
+Train_labels_2 <-Train_2[,10] 
+Valid_labels_2 <-Valid_2[,10]
+Test_labels_2 <-Test_2[,10]
+
+nn_2 <- knn(train.norm.df_2[, -10], test.norm.df_2 , cl=train.norm.df_2[, 10], k=3, prob = 0.5)
+# print(nn)
+
+#row.names(Train_2)[attr(nn_2, "nn.index")]
+#knn_2
+confusionMatrix(nn_2,Test_labels_2)
+
+nn_2_Valid <- knn(valid.norm.df_2[, -10], test.norm.df_2, cl=valid.norm.df_2[, 10], k=3, prob = 0.5)
+#knn_2_Valid
+confusionMatrix(nn_2_Valid,Test_labels_2)
+```
+# Compare the confusion matrix of the test set with that of the training and validation sets. Comment on the differences and their reason?
+
+the confusion matrix for the test set is 0.954 while the confusion matrix for the training and validation set is 0.953, the accuracy of the test set is higher, this is because the test set has more data than the validation set.      
+                 
+    
+
+
