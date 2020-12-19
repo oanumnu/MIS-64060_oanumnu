@@ -1,0 +1,270 @@
+---
+title: "ML CRISCA Customer Segmenation"
+author: "Obianuju Anumnu"
+date: "12/14/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(class)
+library(caret)
+library(ISLR)
+library(dummies)
+library(FNN)
+library(dplyr)
+library(ggvis)
+library(ggplot2)
+library(e1071)
+library(tidyverse)
+library(factoextra) 
+library(flexclust)
+library(imputeTS)
+library(stats)
+```
+```{r}
+#Read Data 
+bathsoap<- read.csv("C:\\Users\\Obianuju\\OneDrive\\D\\Machine\\BathSoap.csv")
+head(bathsoap)
+#check for missing data
+colMeans(is.na(bathsoap))
+#no missing data
+```
+# Data Pre-processing
+```{r}
+#add row names
+row.names(bathsoap)<- bathsoap[,1]
+#remove the Member_id column
+bathsoap1<-bathsoap[,-1]
+#convert percentages to numbers.
+bathsoap_num <- bathsoap1[19:45] %>% mutate_each(funs(as.numeric(gsub("%", "", ., fixed = TRUE))/100))
+bathsoap_total<-cbind(bathsoap1[1:18],bathsoap_num)
+```
+
+ 
+# effect of using percentages of total purchases comprised by various brands 
+#Percentage of total purchase is an indication of brand loyalty, the data
+as it is shows multiple volumes of brand purchases and this may confuse the model. It is better to have a derived variable from "Purchase volume 
+and percentage of volume purchased of the brand"
+
+#Clustering - Purchase Behaviour
+```{r}
+# Subsetting purchase behavior variables
+str(bathsoap_total)
+Purchase_B<-bathsoap_total[,c(1,7,8,11:30)]
+# total volumes of each brand
+volume <- function(x){
+return(x*Purchase_B$Total.Volume)
+}
+vol<-as.data.frame(lapply(Purchase_B[12:23],volume))
+Purchase_Behav <- Purchase_B[,1:11]
+Purchase_Behaviour <- cbind(Purchase_Behav,vol)
+Purchase_Behaviour$max <- apply(Purchase_Behaviour[,15:22], 1, max)
+boxplot(Purchase_Behaviour)
+# data requires normalisation.
+PB_norm <- scale(Purchase_Behaviour[c(1:11,23,24)])
+```
+```{r}
+#Visualizing distance matrix
+set.seed(100)
+distance_matrix <- get_dist(PB_norm)
+fviz_dist(distance_matrix)
+```
+```{r}
+#computing kmeans clusterring 
+#first start with k=4 and number of restarts = 25 (random selection based on fviz_distance)
+k4 <- kmeans(PB_norm, centers = 4, nstart = 25)
+# Visualize the output
+k4$centers
+k4$size
+k4$cluster[150]
+fviz_cluster(k4, data = PB_norm)
+```
+```{r}
+#rerun model with other distances
+set.seed(120)
+#kmeans clustering, using manhattan distance
+k4 = kcca(PB_norm, k=4, kccaFamily("kmedians"))
+#Apply the predict() function
+clusters_index <- predict(k4)
+dist(k4@centers)
+image(k4)
+points(PB_norm, col=clusters_index, pch=19, cex=0.3)
+```
+```{r}
+#using elbow chart to determine k
+set.seed(100)
+# Scaling the data frame (z-score) 
+fviz_nbclust(PB_norm, kmeans, method = "wss")
+```
+```{r}
+fviz_nbclust(PB_norm, kmeans, method = "silhouette")
+```
+```{r, fig.height=10, fig.width=16}
+set.seed(123)
+k2 <- kmeans(PB_norm, centers = 2, nstart = 25) # k = 2, number of restarts = 25
+center <- k2$centers
+cluster <- c(1:2)
+center_PB <- data.frame(cluster, center)
+center_reshape <- gather(center_PB, features, values,SEC,HS,CHILD,No..of.Brands, Brand.Runs, Total.Volume, No..of..Trans, Value, Trans...Brand.Runs, Vol.Tran, Avg..Price, Others.999, max)
+
+set.seed(123)
+library(RColorBrewer)
+# create the palette of colors we will use to plot the heat map
+hm.palette <-colorRampPalette(rev(brewer.pal(10, 'RdYlGn')),space='Lab')
+
+# Plot the heat map
+ggplot(data = center_reshape, aes(x = features, y = cluster, fill = values)) +
+    scale_y_continuous(breaks = seq(1, 2, by = 1)) +
+    geom_tile() +
+    coord_equal() +
+    scale_fill_gradientn(colours = hm.palette(90)) +
+    theme_classic()
+```
+
+
+```{r}
+k2$centers
+k2$size
+```
+Cluster 1 has 217cstomers and cluster 2 has 383customers
+Cluster 1 has highEr values for all variables except Avg.Price and children
+cluster 1 has higher brand loyalty, they have higher volumes and value. 
+Cluster 1 has higher financial capacity and more people in the house which can explain the higher spending.
+cluster 2 has more children, (maybe the brands represented in the data are not child friendly)
+Advertising agencies can use this clustering to target customers effectively.
+manufacturers can monitor their market share ( child product manufacturers will clearly favour cluster 2)
+
+
+#Clustering - Basis of Purchase 
+```{r}
+#Subsetting basis of purchase variables
+Basis_P<-bathsoap_total[,c(1,7,8,13,19:21,31:35,44)]
+# Finding out the total volumes for each brand category
+volume2 <- function(x){
+return(x*Basis_P$Total.Volume)
+}
+Basis_Pur<-as.data.frame(lapply(Basis_P[c(1:3,5:13)],volume2))
+```
+```{r,fig.height=6, fig.width=14}
+boxplot(Basis_Pur)
+#normalise data
+BoP_norm <- scale(Basis_Pur)
+```
+```{r}
+#Visualizing distance matrix
+set.seed(100)
+distance_matrix <- get_dist(BoP_norm)
+fviz_dist(distance_matrix)
+```
+```{r}
+#computing kmeans clusterring 
+#first start with k=4 and number of restarts = 25 (random selection based on fviz_distance)
+k4 <- kmeans(BoP_norm, centers = 4, nstart = 25)
+# Visualize the output
+k4$centers
+k4$size
+k4$cluster[150]
+fviz_cluster(k4, data = BoP_norm)
+```
+```{r}
+#rerun model with other distances
+set.seed(120)
+#kmeans clustering, using manhattan distance
+k4 = kcca(BoP_norm, k=4, kccaFamily("kmedians"))
+#Apply the predict() function
+clusters_index <- predict(k4)
+dist(k4@centers)
+image(k4)
+points(BoP_norm, col=clusters_index, pch=19, cex=0.3)
+```
+```{r}
+#using elbow chart to determine k
+set.seed(100)
+# Scaling the data frame (z-score) 
+fviz_nbclust(BoP_norm, kmeans, method = "wss")
+```
+```{r}
+fviz_nbclust(PB_norm, kmeans, method = "silhouette")
+```
+
+
+```{r,,fig.height=6, fig.width=14}
+set.seed(123)
+k2 <- kmeans(BoP_norm, centers = 2, nstart = 25) # k = 2, number of restarts = 25
+center <- k2$centers
+cluster <- c(1:2)
+center_BoP <- data.frame(cluster, center)
+str(center_BoP)
+center_reshape <- gather(center_BoP, features, values,SEC,HS,CHILD, Pur.Vol.No.Promo....,Pur.Vol.Promo.6.., Pur.Vol.Other.Promo..,Pr.Cat.1,Pr.Cat.2,Pr.Cat.3,Pr.Cat.4,PropCat.5,PropCat.14)
+set.seed(123)
+library(RColorBrewer)
+# create the palette of colors we will use to plot the heat map
+hm.palette <-colorRampPalette(rev(brewer.pal(10, 'RdYlGn')),space='Lab')
+
+# Plot the heat map
+ggplot(data = center_reshape, aes(x = features, y = cluster, fill = values)) +
+    scale_y_continuous(breaks = seq(1, 2, by = 1)) +
+    geom_tile() +
+    coord_equal() +
+    scale_fill_gradientn(colours = hm.palette(90)) +
+    theme_classic()
+```
+```{r}
+k2$centers
+k2$size
+```
+Cluster 1 has 124customers aand cluster2 has 476customers
+Cluster 1 is higher in all variables
+Cluster 1 does not seem to be affected by price discounts. 
+Cluster 1 is buying more, has more available income, more people in the household and more
+children
+
+#Clustering with both Purchase behaviour and basis of purchase
+```{r}
+PB_BoP<-cbind(BoP_norm, PB_norm)
+# we will use k=2
+set.seed(123)
+k2 <- kmeans(PB_BoP, centers = 2, nstart = 25) # k = 2, number of restarts = 25
+k2$centers
+k2$size
+```
+
+
+Cluster 1 has 451cstomers and cluster 2 has 149customers
+Cluster 1 has highEr values for all variables except Avg.Price and children
+cluster 1 has higher brand loyalty, they have higher volumes and value. 
+Cluster 1 has higher financial capacity and more people in the house which can explain the higher spending.
+cluster 2 has more children, (maybe the brands represented in the data are not child friendly)
+Advertising agencies can use this clustering to target customers effectively.
+manufacturers can monitor their market share ( child product manufacturers will clearly favour cluster 2)
+Cluster 1 are high value customers and should be targeted with high value products
+Cluster 2 seem to be lower valus customers that respond to price changes, this charateristics can also be used as a marketing approach.
+```{r}
+```
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
